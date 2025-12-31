@@ -12,7 +12,7 @@ A minimal but complete persona + memory chatbot framework:
 1. npm install
 2. cp .env.example .env  (fill SILICONFLOW_API_KEY)
 3. npm start
-4. Open http://localhost:3000
+4. Open <http://localhost:3000>
 
 ## Data files
 

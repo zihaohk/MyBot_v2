@@ -2,7 +2,8 @@ const path = require("path");
 const fs = require("fs/promises");
 const { exists, writeFileAtomic } = require("./fsUtil");
 
-const PERSONA_PATH = path.join(__dirname, "..", "data", "persona.md");
+const PERSONAS_DIR = path.join(__dirname, "..", "data", "personas");
+const DEFAULT_PERSONA_ID = "default";
 const DEFAULT_PERSONA = `# 人设
 
 你正在扮演一个“情感陪伴型聊天机器人”。
@@ -25,19 +26,43 @@ const DEFAULT_PERSONA = `# 人设
 - 如果记忆与用户最新消息冲突，以用户最新消息为准。
 `;
 
-async function getPersona() {
-  if (!(await exists(PERSONA_PATH))) {
-    await writeFileAtomic(PERSONA_PATH, DEFAULT_PERSONA, "utf8");
-    return DEFAULT_PERSONA;
-  }
-  return await fs.readFile(PERSONA_PATH, "utf8");
+function getPersonaDir(personaId) {
+  return path.join(PERSONAS_DIR, personaId || DEFAULT_PERSONA_ID);
 }
 
-async function setPersona(content) {
-  await writeFileAtomic(PERSONA_PATH, content, "utf8");
+function getPersonaPath(personaId) {
+  return path.join(getPersonaDir(personaId), "persona.md");
+}
+
+async function assertPersonaDir(personaId) {
+  const dir = getPersonaDir(personaId);
+  if (!(await exists(dir))) {
+    const err = new Error("Persona not found");
+    err.statusCode = 404;
+    err.publicMessage = "persona not found";
+    throw err;
+  }
+  return dir;
+}
+
+async function getPersona(personaId) {
+  await assertPersonaDir(personaId);
+  const personaPath = getPersonaPath(personaId);
+  if (!(await exists(personaPath))) {
+    await writeFileAtomic(personaPath, DEFAULT_PERSONA, "utf8");
+    return DEFAULT_PERSONA;
+  }
+  return await fs.readFile(personaPath, "utf8");
+}
+
+async function setPersona(personaId, content) {
+  await assertPersonaDir(personaId);
+  const personaPath = getPersonaPath(personaId);
+  await writeFileAtomic(personaPath, content, "utf8");
 }
 
 module.exports = {
+  DEFAULT_PERSONA,
   getPersona,
   setPersona
 };

@@ -2,11 +2,31 @@ const path = require("path");
 const fs = require("fs/promises");
 const { exists, writeFileAtomic } = require("./fsUtil");
 
-const MEMORY_PATH = path.join(__dirname, "..", "data", "memory.json");
+const PERSONAS_DIR = path.join(__dirname, "..", "data", "personas");
+const DEFAULT_PERSONA_ID = "default";
 
 const DEFAULT_MEMORY = {
   turns: []
 };
+
+function getPersonaDir(personaId) {
+  return path.join(PERSONAS_DIR, personaId || DEFAULT_PERSONA_ID);
+}
+
+function getMemoryPath(personaId) {
+  return path.join(getPersonaDir(personaId), "memory.json");
+}
+
+async function assertPersonaDir(personaId) {
+  const dir = getPersonaDir(personaId);
+  if (!(await exists(dir))) {
+    const err = new Error("Persona not found");
+    err.statusCode = 404;
+    err.publicMessage = "persona not found";
+    throw err;
+  }
+  return dir;
+}
 
 function normalizeMemoryStatus(mem, turns) {
   if (mem?.status === "pending" || mem?.status === "done") {
@@ -59,13 +79,15 @@ function normalizeMemory(mem) {
   return { ...out, status, turns: normalizedTurns };
 }
 
-async function getMemory() {
-  if (!(await exists(MEMORY_PATH))) {
+async function getMemory(personaId) {
+  await assertPersonaDir(personaId);
+  const memoryPath = getMemoryPath(personaId);
+  if (!(await exists(memoryPath))) {
     const init = normalizeMemory(DEFAULT_MEMORY);
-    await writeFileAtomic(MEMORY_PATH, JSON.stringify(init, null, 2), "utf8");
+    await writeFileAtomic(memoryPath, JSON.stringify(init, null, 2), "utf8");
     return init;
   }
-  const raw = await fs.readFile(MEMORY_PATH, "utf8");
+  const raw = await fs.readFile(memoryPath, "utf8");
   let parsed;
   try {
     parsed = JSON.parse(raw);
@@ -74,18 +96,20 @@ async function getMemory() {
   }
   const norm = normalizeMemory(parsed);
   // self-heal
-  await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return norm;
 }
 
-async function setMemory(memObject) {
+async function setMemory(personaId, memObject) {
+  await assertPersonaDir(personaId);
+  const memoryPath = getMemoryPath(personaId);
   const norm = normalizeMemory(memObject);
-  await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return norm;
 }
 
-async function appendPendingTurn(user, memoryTurns) {
-  const mem = await getMemory();
+async function appendPendingTurn(personaId, user, memoryTurns) {
+  const mem = await getMemory(personaId);
   const norm = normalizeMemory(mem);
   const turn = {
     ts: new Date().toISOString(),
@@ -100,12 +124,13 @@ async function appendPendingTurn(user, memoryTurns) {
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
   norm.turns = trimTurns(norm.turns, keep, norm.status);
 
-  await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+  const memoryPath = getMemoryPath(personaId);
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return turn;
 }
 
-async function resolvePendingTurn(assistant, memoryTurns) {
-  const mem = await getMemory();
+async function resolvePendingTurn(personaId, assistant, memoryTurns) {
+  const mem = await getMemory(personaId);
   const norm = normalizeMemory(mem);
 
   const idx = norm.turns.length - 1;
@@ -122,18 +147,20 @@ async function resolvePendingTurn(assistant, memoryTurns) {
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
   norm.turns = trimTurns(norm.turns, keep, norm.status);
 
-  await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+  const memoryPath = getMemoryPath(personaId);
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return norm.turns[idx];
 }
 
-async function rollbackPendingTurn(memoryTurns) {
-  const mem = await getMemory();
+async function rollbackPendingTurn(personaId, memoryTurns) {
+  const mem = await getMemory(personaId);
   const norm = normalizeMemory(mem);
 
   if (norm.turns.length === 0) {
     if (norm.status !== "done") {
       norm.status = "done";
-      await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+      const memoryPath = getMemoryPath(personaId);
+      await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
     }
     return null;
   }
@@ -149,7 +176,8 @@ async function rollbackPendingTurn(memoryTurns) {
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
   norm.turns = trimTurns(norm.turns, keep, norm.status);
 
-  await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+  const memoryPath = getMemoryPath(personaId);
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return norm;
 }
 
@@ -157,8 +185,8 @@ async function rollbackPendingTurn(memoryTurns) {
  * Append one turn then keep last N turns.
  * If options.trimOnly is true, it only trims based on current file contents.
  */
-async function appendTurnAndTrim(user, assistant, memoryTurns, options = {}) {
-  const mem = await getMemory();
+async function appendTurnAndTrim(personaId, user, assistant, memoryTurns, options = {}) {
+  const mem = await getMemory(personaId);
   const norm = normalizeMemory(mem);
 
   if (!options.trimOnly) {
@@ -174,7 +202,8 @@ async function appendTurnAndTrim(user, assistant, memoryTurns, options = {}) {
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
   norm.turns = trimTurns(norm.turns, keep, norm.status);
 
-  await writeFileAtomic(MEMORY_PATH, JSON.stringify(norm, null, 2), "utf8");
+  const memoryPath = getMemoryPath(personaId);
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return norm;
 }
 

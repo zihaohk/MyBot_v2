@@ -3,12 +3,24 @@ const fs = require("fs/promises");
 const { exists, writeFileAtomic } = require("./fsUtil");
 
 const CONFIG_PATH = path.join(__dirname, "..", "data", "config.json");
+const FONT_KEYS = new Set([
+  "system",
+  "pingfang",
+  "yahei",
+  "noto",
+  "song",
+  "kaiti",
+  "fangsong",
+  "mono"
+]);
 const DEFAULT_CONFIG = {
   memoryTurns: 20,
   temperature: 0.7,
   topP: 0.7,
   sendDelayMs: 3000,
-  maxTokens: 2048
+  maxTokens: 2048,
+  assistantSegmentDelayMs: 800,
+  fontFamily: "system"
 };
 
 function normalizeConfig(cfg) {
@@ -49,6 +61,16 @@ function normalizeConfig(cfg) {
   } else {
     out.maxTokens = Math.floor(maxTokens);
   }
+
+  const assistantSegmentDelayMs = Number(out.assistantSegmentDelayMs);
+  if (!Number.isFinite(assistantSegmentDelayMs) || assistantSegmentDelayMs < 0 || assistantSegmentDelayMs > 60000) {
+    out.assistantSegmentDelayMs = DEFAULT_CONFIG.assistantSegmentDelayMs;
+  } else {
+    out.assistantSegmentDelayMs = Math.round(assistantSegmentDelayMs);
+  }
+
+  const fontFamily = typeof out.fontFamily === "string" ? out.fontFamily : DEFAULT_CONFIG.fontFamily;
+  out.fontFamily = FONT_KEYS.has(fontFamily) ? fontFamily : DEFAULT_CONFIG.fontFamily;
   return out;
 }
 
@@ -71,9 +93,18 @@ async function getConfig() {
   return norm;
 }
 
-async function setConfig({ memoryTurns, temperature, topP, sendDelayMs, maxTokens }) {
+async function setConfig({ memoryTurns, temperature, topP, sendDelayMs, maxTokens, assistantSegmentDelayMs, fontFamily }) {
   const current = await getConfig();
-  const next = normalizeConfig({ ...current, memoryTurns, temperature, topP, sendDelayMs, maxTokens });
+  const next = normalizeConfig({
+    ...current,
+    memoryTurns,
+    temperature,
+    topP,
+    sendDelayMs,
+    maxTokens,
+    assistantSegmentDelayMs,
+    fontFamily
+  });
   await writeFileAtomic(CONFIG_PATH, JSON.stringify(next, null, 2), "utf8");
   return next;
 }

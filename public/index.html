@@ -7,7 +7,7 @@
   <link rel="icon" type="image/png" href="/sanhua.png" />
   <link rel="stylesheet" href="/styles.css" />
 </head>
-<body>
+<body class="no-panel-anim">
   <div class="app">
     <header class="topbar">
       <button id="btnSettings" class="icon-btn" title="设置">⚙</button>
@@ -21,11 +21,25 @@
       </div>
     </header>
 
-    <main class="chat">
-      <div id="chatList" class="chat-list"></div>
+    <main class="main">
+      <section class="chat">
+        <div id="emptyState" class="empty-state hidden">选择一个心仪的对象开始聊天吧...</div>
+        <div id="chatList" class="chat-list"></div>
+      </section>
+      <button id="personaToggle" class="panel-toggle" type="button" aria-label="Toggle persona panel">&gt;</button>
+      <aside class="persona-panel">
+        <div class="persona-header">
+          <div class="persona-title">角色列表</div>
+          <div class="persona-actions">
+            <button id="btnNewPersona" class="btn">新建</button>
+            <button id="btnDeletePersona" class="btn danger">删除</button>
+          </div>
+        </div>
+        <div id="personaList" class="persona-list"></div>
+      </aside>
     </main>
 
-    <footer class="composer">
+    <footer id="composer" class="composer">
       <textarea id="input" class="input" rows="2" placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"></textarea>
       <button id="btnSend" class="btn primary">
         <span class="btn-text">发送</span>
@@ -42,6 +56,8 @@
         <button class="icon-btn" data-close="modalSettings">✕</button>
       </div>
       <div class="modal-body">
+        <div class="settings-grid">
+          <div class="settings-col">
         <label class="field">
           <div class="label">保存记忆轮数</div>
           <input id="memoryTurnsInput" type="number" min="1" max="200" step="1" />
@@ -59,9 +75,30 @@
           <input id="sendDelayInput" type="number" min="0" max="60000" step="100" />
         </label>
         <label class="field">
+          <div class="label">Assistant segment delay (ms)</div>
+          <input id="assistantSegmentDelayInput" type="number" min="0" max="60000" step="100" />
+        </label>
+        <label class="field">
           <div class="label">Max tokens</div>
           <input id="maxTokensInput" type="number" min="1" max="200000" step="1" />
         </label>
+          </div>
+          <div class="settings-col">
+            <label class="field">
+          <div class="label">Font</div>
+          <select id="fontFamilySelect">
+            <option value="system">System</option>
+            <option value="pingfang">PingFang</option>
+            <option value="yahei">YaHei</option>
+            <option value="noto">Noto Sans</option>
+            <option value="song">Songti</option>
+            <option value="kaiti">Kaiti</option>
+            <option value="fangsong">FangSong</option>
+            <option value="mono">Monospace</option>
+          </select>
+        </label>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn" data-close="modalSettings">取消</button>
@@ -108,6 +145,32 @@
           <button class="btn" data-close="modalMemory">关闭</button>
           <button class="btn primary" id="btnSaveMemory">保存</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Persona Modal -->
+  <div id="modalCreatePersona" class="modal hidden" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title">新建人设</div>
+        <button class="icon-btn" data-close="modalCreatePersona">✕</button>
+      </div>
+      <div class="modal-body">
+        <label class="field">
+          <div class="label">文件夹名</div>
+          <input id="personaIdInput" type="text" autocomplete="off" />
+          <div class="hint">仅支持字母、数字、下划线、短横线</div>
+        </label>
+        <label class="field">
+          <div class="label">角色名</div>
+          <input id="personaNameInput" type="text" autocomplete="off" />
+        </label>
+        <div id="personaCreateError" class="error-hint hidden"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" data-close="modalCreatePersona">取消</button>
+        <button id="btnCreatePersona" class="btn primary">创建</button>
       </div>
     </div>
   </div>
