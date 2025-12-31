@@ -1,9 +1,0 @@
-{
-  "memoryTurns": 20,
-  "temperature": 0.5,
-  "topP": 0.7,
-  "sendDelayMs": 3000,
-  "maxTokens": 2048,
-  "assistantSegmentDelayMs": 1400,
-  "fontFamily": "mono"
-}
