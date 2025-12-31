@@ -55,22 +55,12 @@ function extractPersonaName(content) {
       }
       return "";
     }
-    if (line === "##名字" || line === "## 名字") {
-      for (let j = i + 1; j < lines.length; j++) {
-        const name = lines[j].trim();
-        if (name) return name;
-      }
-      return "";
-    }
   }
   return "";
 }
 
 function ensureNameHeader(content, displayName) {
   const raw = String(content || "");
-  if (/^##\s*名字\s*$/m.test(raw)) {
-    return raw;
-  }
   if (/^##\s*名字\s*$/m.test(raw)) {
     return raw;
   }

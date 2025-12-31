@@ -725,13 +725,6 @@ function getNumberOrDefault(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function escapeHtml(str) {
-  return String(str)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
 function scrollToBottom() {
   els.chatList.scrollTo({
     top: els.chatList.scrollHeight,
@@ -932,7 +925,12 @@ function hideModal(modalEl) {
 }
 
 function loadPendingQueue(personaId) {
-  const raw = localStorage.getItem(getPendingQueueKey(personaId));
+  let raw = null;
+  try {
+    raw = localStorage.getItem(getPendingQueueKey(personaId));
+  } catch {
+    return null;
+  }
   if (!raw) return null;
   try {
     const data = JSON.parse(raw);
@@ -949,7 +947,11 @@ function loadPendingQueue(personaId) {
 function savePendingQueue(personaId, sendAt) {
   const personaState = getPersonaState(personaId);
   if (!personaState.pendingMessages.length) {
-    localStorage.removeItem(getPendingQueueKey(personaId));
+    try {
+      localStorage.removeItem(getPendingQueueKey(personaId));
+    } catch {
+      // ignore storage errors
+    }
     return;
   }
   const payload = {
@@ -957,11 +959,19 @@ function savePendingQueue(personaId, sendAt) {
     sendAt: Number.isFinite(sendAt) ? sendAt : Date.now(),
     ts: personaState.pendingUserTimestamp || new Date().toISOString()
   };
-  localStorage.setItem(getPendingQueueKey(personaId), JSON.stringify(payload));
+  try {
+    localStorage.setItem(getPendingQueueKey(personaId), JSON.stringify(payload));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function clearPendingQueue(personaId) {
-  localStorage.removeItem(getPendingQueueKey(personaId));
+  try {
+    localStorage.removeItem(getPendingQueueKey(personaId));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 function scheduleBatchSendWithDelay(personaId, delayMs) {
