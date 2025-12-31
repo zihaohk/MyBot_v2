@@ -20,7 +20,7 @@ Node.js + Express + static UI chatbot with multi-persona support, per-persona me
 
 ## Data layout
 
-```
+```text
 data/
   config.json
   prompts/
