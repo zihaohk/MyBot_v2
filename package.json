@@ -1,0 +1,15 @@
+{
+  "name": "emotion-bot",
+  "version": "1.0.0",
+  "description": "Persona + memory chat UI, backed by SiliconFlow chat completions API.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2"
+  }
+}
