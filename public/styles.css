@@ -121,6 +121,7 @@ body.no-panel-anim .panel-toggle {
 #btnSend {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
   position: relative;
   border-color: rgba(46,200,100,.45);
@@ -128,14 +129,6 @@ body.no-panel-anim .panel-toggle {
 }
 #btnSend:hover {
   background: rgba(46,200,100,.28);
-}
-#btnSend.is-undo {
-  border-color: rgba(255,200,72,.55);
-  background: rgba(255,200,72,.22);
-  color: var(--text);
-}
-#btnSend.is-undo:hover {
-  background: rgba(255,200,72,.32);
 }
 #btnSend:disabled {
   background: rgba(255,255,255,.06);
@@ -161,6 +154,44 @@ body.no-panel-anim .panel-toggle {
   margin-left: calc(var(--spinner-size) * -0.5);
   margin-top: calc(var(--spinner-size) * -0.5);
 }
+#btnSend.is-loading {
+  animation: waitingPulse 1.2s ease-in-out infinite;
+}
+#btnUndo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-color: rgba(255,200,72,.55);
+  background: rgba(255,200,72,.22);
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  max-width: 120px;
+  margin-left: 8px;
+  transition: max-width 0.2s ease, opacity 0.2s ease, transform 0.2s ease, margin-left 0.2s ease, padding 0.2s ease, border-width 0.2s ease, width 0.2s ease;
+  will-change: max-width, opacity, transform, margin-left, padding, border-width, width;
+}
+#btnUndo.undo-hidden {
+  max-width: 0;
+  width: 0;
+  padding: 0;
+  border-width: 0;
+  opacity: 0;
+  transform: translateX(6px);
+  margin-left: 0;
+  pointer-events: none;
+}
+#btnUndo.pop {
+  animation: undoPop 0.28s ease-out;
+}
+#btnUndo:hover {
+  background: rgba(255,200,72,.32);
+}
+#btnUndo:disabled {
+  background: rgba(255,255,255,.06);
+  border-color: var(--border);
+  color: var(--muted);
+}
 .btn.danger {
   border-color: rgba(255,93,93,.45);
   background: rgba(255,93,93,.18);
@@ -182,8 +213,12 @@ body.no-panel-anim .panel-toggle {
   padding: 14px 12px;
   overflow: auto;
   direction: rtl;
+  transition: opacity 0.18s ease;
 }
 .chat-list > * { direction: ltr; }
+.chat-list.chat-fade-hidden {
+  opacity: 0;
+}
 .chat-list,
 .persona-list,
 .editor {
@@ -417,10 +452,29 @@ body:not(.panel-collapsed) .panel-toggle {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 10px;
-  padding: 12px;
+  padding: 12px 10px 12px 12px;
   border-top: 1px solid var(--border);
   background: linear-gradient(to top, rgba(17,24,35,.78), rgba(17,24,35,.5));
   backdrop-filter: blur(14px);
+  align-items: stretch;
+}
+.composer-actions {
+  display: inline-flex;
+  gap: 0;
+  align-items: stretch;
+  height: 100%;
+}
+.composer-actions .btn {
+  height: 100%;
+  aspect-ratio: 1 / 1;
+}
+@keyframes undoPop {
+  0% { transform: translateY(4px) scale(0.96); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}
+@keyframes waitingPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.03); }
 }
 
 .input {
@@ -443,6 +497,17 @@ body:not(.panel-collapsed) .panel-toggle {
   place-items: center;
   padding: 18px;
   z-index: 50;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.18s ease;
+}
+.modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+.modal.is-closing {
+  opacity: 0;
+  pointer-events: none;
 }
 .modal.hidden { display: none; }
 
@@ -453,6 +518,17 @@ body:not(.panel-collapsed) .panel-toggle {
   border-radius: 16px;
   box-shadow: var(--shadow);
   overflow: hidden;
+  transform: scale(0.96);
+  opacity: 0;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.modal.is-open .modal-card {
+  transform: scale(1);
+  opacity: 1;
+}
+.modal.is-closing .modal-card {
+  transform: scale(0.96);
+  opacity: 0;
 }
 .modal-card.large { width: min(980px, 96vw); height: min(80vh, 780px); display: grid; grid-template-rows: auto 1fr auto; }
 
@@ -553,8 +629,8 @@ body:not(.panel-collapsed) .panel-toggle {
   to { transform: rotate(360deg); }
 }
 @keyframes dotPulse {
-  0%, 100% { transform: scale(0.75); opacity: 0.35; }
-  50% { transform: scale(1); opacity: 0.9; }
+  0%, 100% { transform: translateY(0) scale(0.75); opacity: 0.35; }
+  50% { transform: translateY(-3px) scale(1); opacity: 0.9; }
 }
 @keyframes bubblePop {
   0% { transform: translateY(6px) scale(0.98); opacity: 0; }

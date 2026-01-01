@@ -1,3 +1,18 @@
+function resolveFetch() {
+  if (typeof globalThis.fetch === "function") return globalThis.fetch;
+  try {
+    const nodeFetch = require("node-fetch");
+    return nodeFetch.default || nodeFetch;
+  } catch (err) {
+    const error = new Error("Missing fetch implementation");
+    error.statusCode = 500;
+    error.publicMessage = "Server misconfigured: Node 18+ is required or install node-fetch";
+    throw error;
+  }
+}
+
+const fetchFn = resolveFetch();
+
 function getApiBase() {
   const base = (process.env.SILICONFLOW_API_BASE || "https://api.siliconflow.cn/v1").trim();
   // Allow user to set full endpoint or just /v1
@@ -47,7 +62,7 @@ async function chatCompletions({ messages, temperature, topP, maxTokens }) {
     top_p: resolvedTopP
   };
 
-  const resp = await fetch(url, {
+  const resp = await fetchFn(url, {
     method: "POST",
     headers: {
       "Authorization": `Bearer ${apiKey}`,
