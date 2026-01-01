@@ -24,6 +24,7 @@
   maxTokensInput: document.getElementById("maxTokensInput"),
   assistantSegmentDelayInput: document.getElementById("assistantSegmentDelayInput"),
   fontFamilySelect: document.getElementById("fontFamilySelect"),
+  settingsError: document.getElementById("settingsError"),
 
   personaEditor: document.getElementById("personaEditor"),
   btnSavePersona: document.getElementById("btnSavePersona"),
@@ -725,6 +726,37 @@ function getNumberOrDefault(value, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function readNumberInput(inputEl) {
+  const raw = String(inputEl?.value ?? "").trim();
+  if (!raw) return NaN;
+  return Number(raw);
+}
+
+function getFieldLabel(inputEl) {
+  const label = inputEl?.closest?.(".field")?.querySelector?.(".label");
+  const text = label?.textContent?.trim();
+  return text || "参数";
+}
+
+function getRangeError(value, min, max, label) {
+  if (!Number.isFinite(value) || value < min || value > max) {
+    return `${label} 需要在 ${min}-${max} 之间`;
+  }
+  return null;
+}
+
+function setSettingsError(message) {
+  if (!els.settingsError) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    els.settingsError.textContent = "";
+    els.settingsError.classList.add("hidden");
+    return;
+  }
+  els.settingsError.textContent = text;
+  els.settingsError.classList.remove("hidden");
+}
+
 function scrollToBottom() {
   els.chatList.scrollTo({
     top: els.chatList.scrollHeight,
@@ -1097,6 +1129,7 @@ async function loadAll() {
 }
 
 async function openSettings() {
+  setSettingsError("");
   els.memoryTurnsInput.value = getNumberOrDefault(state.config.memoryTurns, 20);
   els.temperatureInput.value = getNumberOrDefault(state.config.temperature, 0.7);
   els.topPInput.value = getNumberOrDefault(state.config.topP, 0.7);
@@ -1112,13 +1145,29 @@ async function openSettings() {
 }
 
 async function saveSettings() {
-  const n = Number(els.memoryTurnsInput.value);
-  const temperature = Number(els.temperatureInput.value);
-  const topP = Number(els.topPInput.value);
-  const sendDelayMs = Number(els.sendDelayInput.value);
-  const maxTokens = Number(els.maxTokensInput.value);
-  const assistantSegmentDelayMs = Number(els.assistantSegmentDelayInput?.value);
+  setSettingsError("");
+  const n = readNumberInput(els.memoryTurnsInput);
+  const temperature = readNumberInput(els.temperatureInput);
+  const topP = readNumberInput(els.topPInput);
+  const sendDelayMs = readNumberInput(els.sendDelayInput);
+  const maxTokens = readNumberInput(els.maxTokensInput);
+  const assistantSegmentDelayMs = els.assistantSegmentDelayInput
+    ? readNumberInput(els.assistantSegmentDelayInput)
+    : undefined;
   const fontFamily = els.fontFamilySelect?.value;
+
+  const error = getRangeError(n, 1, 200, getFieldLabel(els.memoryTurnsInput))
+    || getRangeError(temperature, 0, 2, getFieldLabel(els.temperatureInput))
+    || getRangeError(topP, 0, 1, getFieldLabel(els.topPInput))
+    || getRangeError(sendDelayMs, 0, 60000, getFieldLabel(els.sendDelayInput))
+    || getRangeError(maxTokens, 1, 200000, getFieldLabel(els.maxTokensInput))
+    || (els.assistantSegmentDelayInput
+      ? getRangeError(assistantSegmentDelayMs, 0, 60000, getFieldLabel(els.assistantSegmentDelayInput))
+      : null);
+  if (error) {
+    setSettingsError(`保存失败：${error}`);
+    return;
+  }
   const updated = await apiPut("/api/config", {
     memoryTurns: n,
     temperature,
@@ -1515,7 +1564,7 @@ document.addEventListener("click", (ev) => {
 
 // Bind UI events
 els.btnSettings.addEventListener("click", openSettings);
-els.btnSaveSettings.addEventListener("click", () => saveSettings().catch(err => setStatus(`设置失败：${err.message}`)));
+els.btnSaveSettings.addEventListener("click", () => saveSettings().catch(err => setSettingsError(`保存失败：${err.message}`)));
 
 els.btnPersona.addEventListener("click", () => openPersona().catch(err => setStatus(`加载人设失败：${err.message}`)));
 els.btnReloadPersona.addEventListener("click", () => reloadPersona().catch(err => setStatus(`重新加载人设失败：${err.message}`)));
