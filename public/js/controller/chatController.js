@@ -18,7 +18,7 @@ import {
   splitMessageLines
 } from "../ui/chatRender.js";
 import { setStatusText, updateSendButton } from "../ui/status.js";
-import { sendChat } from "../api/chatApi.js";
+import { cancelChat, sendChat } from "../api/chatApi.js";
 import { getMemory } from "../api/memoryApi.js";
 
 function getPendingQueueKey(personaId) {
@@ -29,8 +29,21 @@ function updateSendButtonForActive() {
   if (!state.activePersonaId) return;
   const personaState = getPersonaState(state.activePersonaId);
   const isBusy = personaState.isGenerating || personaState.memory?.status === "pending";
+  const canCancel = Boolean(personaState.pendingRequestController) || personaState.memory?.status === "pending";
   const canUndo = !isBusy && personaState.pendingMessages.length > 0;
-  updateSendButton({ busy: isBusy, canUndo });
+  updateSendButton({ busy: isBusy, canUndo, canCancel });
+}
+
+function getPendingUserText(personaState) {
+  if (personaState.pendingSendText) return personaState.pendingSendText;
+  if (personaState.memory?.status !== "pending") return "";
+  const turns = Array.isArray(personaState.memory?.turns) ? personaState.memory.turns : [];
+  const lastTurn = turns[turns.length - 1];
+  return typeof lastTurn?.user === "string" ? lastTurn.user : "";
+}
+
+function canCancelPending(personaState) {
+  return Boolean(personaState.pendingRequestController) || personaState.memory?.status === "pending";
 }
 
 function undoPendingMessage(personaId) {
@@ -74,6 +87,77 @@ function undoPendingMessage(personaId) {
 
   updateSendButtonForActive();
   return true;
+}
+
+async function cancelPendingResponse(personaId) {
+  if (!hasPersona(personaId)) return false;
+  const personaState = getPersonaState(personaId);
+  if (!canCancelPending(personaState)) return false;
+
+  const pendingText = getPendingUserText(personaState);
+  if (personaState.pendingRequestController) {
+    personaState.ignorePendingResponse = true;
+    personaState.pendingRequestController.abort();
+  }
+
+  stopPendingPoll(personaId);
+
+  let cancelResult = null;
+  let cancelError = null;
+  try {
+    cancelResult = await cancelChat(personaId);
+  } catch (err) {
+    cancelError = err;
+  }
+
+  let memory = cancelResult?.memory || null;
+  if (!memory) {
+    try {
+      memory = await getMemory(personaId);
+    } catch {
+      // ignore refresh errors
+    }
+  }
+
+  if (memory) {
+    personaState.memory = memory;
+    if (isActivePersona(personaId)) {
+      renderActiveMemory(personaId, memory);
+    }
+  } else if (isActivePersona(personaId) && personaState.memory) {
+    renderActiveMemory(personaId, personaState.memory);
+  }
+
+  const cancelled = Boolean(cancelResult?.cancelled);
+  const restoredText = pendingText || (typeof cancelResult?.userMessage === "string" ? cancelResult.userMessage : "");
+
+  if (cancelError) {
+    setStatusForPersona(personaId, `取消失败：${cancelError.message}`);
+    if (memory?.status === "pending") {
+      setSendBusyForPersona(personaId, true);
+      startPendingPoll(personaId);
+      return false;
+    }
+  } else if (cancelled) {
+    if (restoredText && isActivePersona(personaId)) {
+      const existing = els.input.value;
+      const hasExisting = typeof existing === "string" && existing.trim().length > 0;
+      const nextValue = hasExisting ? `${restoredText}\n${existing}` : restoredText;
+      els.input.value = nextValue;
+      personaState.draft = nextValue;
+      els.input.focus();
+      scrollToBottom();
+    } else if (restoredText) {
+      personaState.draft = restoredText;
+    }
+    setStatusForPersona(personaId, "已取消等待");
+  } else {
+    setStatusForPersona(personaId, "回复已完成，无法取消");
+  }
+
+  setSendBusyForPersona(personaId, false);
+  personaState.pendingSendText = "";
+  return cancelled;
 }
 
 export function setStatusForPersona(personaId, message) {
@@ -340,6 +424,9 @@ function renderAssistantSegments(container, text, personaId, onDone) {
     index += 1;
     if (index >= segments.length) {
       personaState.assistantSegmentTimers = [];
+      requestAnimationFrame(() => {
+        scrollToBottom({ behavior: "auto" });
+      });
       if (typeof onDone === "function") onDone();
       return;
     }
@@ -529,6 +616,11 @@ async function flushPendingMessages(personaId) {
   personaState.pendingUserTimestamp = null;
   clearPendingQueue(personaId);
 
+  const controller = new AbortController();
+  personaState.pendingRequestController = controller;
+  personaState.pendingSendText = combinedText;
+  personaState.ignorePendingResponse = false;
+
   setSendBusyForPersona(personaId, true);
   setStatusForPersona(personaId, "对方输入中...");
   const botPlaceholder = isActivePersona(personaId) ? addTempBotMessage("", true) : null;
@@ -537,8 +629,9 @@ async function flushPendingMessages(personaId) {
   let animationDone = false;
   let finalMemory = null;
   try {
-    const result = await sendChat(combinedText, personaId);
+    const result = await sendChat(combinedText, personaId, { signal: controller.signal });
     if (!hasPersona(personaId)) return;
+    if (personaState.ignorePendingResponse) return;
     personaState.animateNextAssistant = isActivePersona(personaId);
 
     if (isActivePersona(personaId) && botPlaceholder?.bubbleStack) {
@@ -576,6 +669,7 @@ async function flushPendingMessages(personaId) {
     }
   } catch (e) {
     if (!hasPersona(personaId)) return;
+    if (controller.signal.aborted || personaState.ignorePendingResponse) return;
     personaState.animateNextAssistant = false;
     if (botPlaceholder?.row) botPlaceholder.row.remove();
     if (isActivePersona(personaId) && pendingDisplay?.row) pendingDisplay.row.remove();
@@ -593,6 +687,13 @@ async function flushPendingMessages(personaId) {
     }
   } finally {
     if (!hasPersona(personaId)) return;
+    if (personaState.pendingRequestController === controller) {
+      personaState.pendingRequestController = null;
+    }
+    if (personaState.pendingSendText === combinedText) {
+      personaState.pendingSendText = "";
+    }
+    personaState.ignorePendingResponse = false;
     if (!releaseAfterSegments) {
       setSendBusyForPersona(personaId, false);
       if (isActivePersona(personaId)) {
@@ -606,6 +707,10 @@ export async function sendMessage() {
   const personaId = state.activePersonaId;
   if (!personaId) return;
   const personaState = getPersonaState(personaId);
+  if (canCancelPending(personaState)) {
+    await cancelPendingResponse(personaId);
+    return;
+  }
   const text = els.input.value.trim();
   if (!text) return;
   if (personaState.isGenerating) {

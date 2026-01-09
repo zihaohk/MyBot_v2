@@ -12,19 +12,21 @@ export async function apiGet(url) {
   return json;
 }
 
-export async function apiPut(url, body) {
+export async function apiPut(url, body, options = {}) {
   return requestJson(url, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   }, "PUT");
 }
 
-export async function apiPost(url, body) {
+export async function apiPost(url, body, options = {}) {
   return requestJson(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body)
+    body: JSON.stringify(body),
+    signal: options.signal
   }, "POST");
 }
 

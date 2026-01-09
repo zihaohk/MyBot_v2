@@ -9,6 +9,10 @@ const DEFAULT_MEMORY = {
   turns: []
 };
 
+function createPendingId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 function getPersonaDir(personaId) {
   return path.join(PERSONAS_DIR, personaId || DEFAULT_PERSONA_ID);
 }
@@ -62,6 +66,7 @@ function trimTurns(turns, keep, status) {
 function normalizeMemory(mem) {
   const out = { ...(mem || {}) };
   const turns = Array.isArray(out.turns) ? out.turns : [];
+  let pendingId = typeof out.pendingId === "string" ? out.pendingId : "";
 
   // normalize each turn
   const normalizedTurns = turns
@@ -71,6 +76,15 @@ function normalizeMemory(mem) {
   let status = normalizeMemoryStatus(out, turns);
   if (normalizedTurns.length === 0) {
     status = "done";
+  }
+
+  if (status === "pending") {
+    if (!pendingId) {
+      pendingId = createPendingId();
+    }
+    out.pendingId = pendingId;
+  } else {
+    delete out.pendingId;
   }
 
   delete out.version;
@@ -111,6 +125,7 @@ async function setMemory(personaId, memObject) {
 async function appendPendingTurn(personaId, user, memoryTurns) {
   const mem = await getMemory(personaId);
   const norm = normalizeMemory(mem);
+  const pendingId = createPendingId();
   const turn = {
     ts: new Date().toISOString(),
     user: typeof user === "string" ? user : "",
@@ -119,6 +134,7 @@ async function appendPendingTurn(personaId, user, memoryTurns) {
 
   norm.turns.push(turn);
   norm.status = "pending";
+  norm.pendingId = pendingId;
 
   const n = Number(memoryTurns);
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
@@ -126,15 +142,19 @@ async function appendPendingTurn(personaId, user, memoryTurns) {
 
   const memoryPath = getMemoryPath(personaId);
   await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
-  return turn;
+  return { turn, pendingId };
 }
 
-async function resolvePendingTurn(personaId, assistant, memoryTurns) {
+async function resolvePendingTurn(personaId, assistant, memoryTurns, expectedPendingId) {
   const mem = await getMemory(personaId);
   const norm = normalizeMemory(mem);
 
   const idx = norm.turns.length - 1;
-  if (idx === -1) return null;
+  if (idx === -1) return { ok: false, reason: "empty" };
+  if (norm.status !== "pending") return { ok: false, reason: "not_pending" };
+  if (expectedPendingId && norm.pendingId !== expectedPendingId) {
+    return { ok: false, reason: "pending_id_mismatch" };
+  }
 
   const current = norm.turns[idx];
   norm.turns[idx] = {
@@ -142,6 +162,7 @@ async function resolvePendingTurn(personaId, assistant, memoryTurns) {
     assistant: typeof assistant === "string" ? assistant : ""
   };
   norm.status = "done";
+  delete norm.pendingId;
 
   const n = Number(memoryTurns);
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
@@ -149,7 +170,7 @@ async function resolvePendingTurn(personaId, assistant, memoryTurns) {
 
   const memoryPath = getMemoryPath(personaId);
   await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
-  return norm.turns[idx];
+  return { ok: true, turn: norm.turns[idx], memory: norm };
 }
 
 async function rollbackPendingTurn(personaId, memoryTurns) {
@@ -159,6 +180,7 @@ async function rollbackPendingTurn(personaId, memoryTurns) {
   if (norm.turns.length === 0) {
     if (norm.status !== "done") {
       norm.status = "done";
+      delete norm.pendingId;
       const memoryPath = getMemoryPath(personaId);
       await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
     }
@@ -171,6 +193,7 @@ async function rollbackPendingTurn(personaId, memoryTurns) {
 
   norm.turns.pop();
   norm.status = "done";
+  delete norm.pendingId;
 
   const n = Number(memoryTurns);
   const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
@@ -179,6 +202,38 @@ async function rollbackPendingTurn(personaId, memoryTurns) {
   const memoryPath = getMemoryPath(personaId);
   await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
   return norm;
+}
+
+async function cancelPendingTurn(personaId, memoryTurns) {
+  const mem = await getMemory(personaId);
+  const norm = normalizeMemory(mem);
+  let removedTurn = null;
+
+  if (norm.turns.length === 0) {
+    if (norm.status !== "done") {
+      norm.status = "done";
+      delete norm.pendingId;
+      const memoryPath = getMemoryPath(personaId);
+      await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
+    }
+    return { memory: norm, removedTurn };
+  }
+
+  if (norm.status !== "pending") {
+    return { memory: norm, removedTurn };
+  }
+
+  removedTurn = norm.turns.pop();
+  norm.status = "done";
+  delete norm.pendingId;
+
+  const n = Number(memoryTurns);
+  const keep = Number.isFinite(n) && n > 0 ? Math.floor(n) : 20;
+  norm.turns = trimTurns(norm.turns, keep, norm.status);
+
+  const memoryPath = getMemoryPath(personaId);
+  await writeFileAtomic(memoryPath, JSON.stringify(norm, null, 2), "utf8");
+  return { memory: norm, removedTurn };
 }
 
 /**
@@ -196,6 +251,7 @@ async function appendTurnAndTrim(personaId, user, assistant, memoryTurns, option
       assistant: typeof assistant === "string" ? assistant : ""
     });
     norm.status = "done";
+    delete norm.pendingId;
   }
 
   const n = Number(memoryTurns);
@@ -213,5 +269,6 @@ module.exports = {
   appendPendingTurn,
   resolvePendingTurn,
   rollbackPendingTurn,
+  cancelPendingTurn,
   appendTurnAndTrim
 };

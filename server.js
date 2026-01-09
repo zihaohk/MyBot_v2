@@ -7,7 +7,15 @@ dotenv.config();
 const { getConfig, setConfig } = require("./src/configStore");
 const { getPersona, setPersona } = require("./src/personaStore");
 const { getPrompt } = require("./src/promptStore");
-const { getMemory, setMemory, appendPendingTurn, resolvePendingTurn, rollbackPendingTurn, appendTurnAndTrim } = require("./src/memoryStore");
+const {
+  getMemory,
+  setMemory,
+  appendPendingTurn,
+  resolvePendingTurn,
+  rollbackPendingTurn,
+  cancelPendingTurn,
+  appendTurnAndTrim
+} = require("./src/memoryStore");
 const {
   ensureDefaultPersona,
   listPersonas,
@@ -208,6 +216,28 @@ app.put("/api/memory", async (req, res, next) => {
 });
 
 // Chat
+app.post("/api/chat/cancel", async (req, res, next) => {
+  try {
+    const personaId = resolvePersonaId(req);
+    if (!isValidPersonaId(personaId)) {
+      return res.status(400).json({ error: "persona id is invalid" });
+    }
+    if (!(await personaExists(personaId))) {
+      return res.status(404).json({ error: "persona not found" });
+    }
+    const cfg = await getConfig();
+    const result = await cancelPendingTurn(personaId, cfg.memoryTurns);
+    res.json({
+      ok: true,
+      cancelled: Boolean(result.removedTurn),
+      userMessage: result.removedTurn?.user || "",
+      memory: result.memory
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 app.post("/api/chat", async (req, res, next) => {
   try {
     const { userMessage } = req.body || {};
@@ -240,7 +270,7 @@ app.post("/api/chat", async (req, res, next) => {
       userMessage: userMessage.trim()
     });
 
-    await appendPendingTurn(personaId, userMessage.trim(), cfg.memoryTurns);
+    const pendingResult = await appendPendingTurn(personaId, userMessage.trim(), cfg.memoryTurns);
     try {
       const llmResult = await chatCompletions({
         messages,
@@ -253,8 +283,22 @@ app.post("/api/chat", async (req, res, next) => {
 
       // Resolve pending turn (fallback to append if missing)
       if (await personaExists(personaId)) {
-        const resolved = await resolvePendingTurn(personaId, assistantMessage, cfg.memoryTurns);
-        if (!resolved) {
+        const resolved = await resolvePendingTurn(
+          personaId,
+          assistantMessage,
+          cfg.memoryTurns,
+          pendingResult?.pendingId
+        );
+        if (!resolved?.ok) {
+          const shouldDiscard = resolved?.reason === "pending_id_mismatch" || resolved?.reason === "not_pending";
+          if (shouldDiscard) {
+            return res.json({
+              assistantMessage,
+              usage: llmResult.usage || null,
+              model: llmResult.model || null,
+              discarded: true
+            });
+          }
           await appendTurnAndTrim(personaId, userMessage.trim(), assistantMessage, cfg.memoryTurns);
         }
       }

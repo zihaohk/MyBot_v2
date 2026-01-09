@@ -16,7 +16,10 @@ export function getPersonaState(personaId) {
       countdownRemaining: 0,
       pendingUserTimestamp: null,
       pendingPollId: null,
-      pendingPollInFlight: false
+      pendingPollInFlight: false,
+      pendingRequestController: null,
+      pendingSendText: "",
+      ignorePendingResponse: false
     });
   }
   return personaStates.get(personaId);

@@ -6,12 +6,14 @@ export function setStatusText(message) {
   els.subtitle.textContent = text;
 }
 
-export function updateSendButton({ busy, canUndo }) {
+export function updateSendButton({ busy, canUndo, canCancel }) {
+  const isBusy = Boolean(busy);
+  const isCancelable = Boolean(canCancel);
   if (els.btnSend) {
-    els.btnSend.disabled = Boolean(busy);
-    els.btnSend.classList.toggle("is-loading", Boolean(busy));
+    els.btnSend.disabled = isBusy && !isCancelable;
+    els.btnSend.classList.toggle("is-loading", isBusy);
     if (els.btnSendSpinner) {
-      els.btnSendSpinner.classList.toggle("hidden", !busy);
+      els.btnSendSpinner.classList.toggle("hidden", !isBusy);
     }
     if (els.btnSendText) {
       els.btnSendText.textContent = "发送";
