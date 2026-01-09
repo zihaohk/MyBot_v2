@@ -1,9 +1,13 @@
-﻿import { els } from "../dom.js";
+import { els } from "../dom.js";
 
-export function scrollToBottom() {
+const AUTO_SCROLL_THRESHOLD_PX = 32;
+
+export function scrollToBottom(options = {}) {
+  if (!els.chatList) return;
+  const behavior = options.behavior || "smooth";
   els.chatList.scrollTo({
     top: els.chatList.scrollHeight,
-    behavior: "smooth"
+    behavior
   });
 }
 
@@ -39,9 +43,10 @@ export function fillBotBubbles(container, text, animate = false) {
   }
 }
 
-export function createLoadingBubble() {
+export function createLoadingBubble(animate = false) {
   const bubble = document.createElement("div");
-  bubble.className = "bubble bot loading pop";
+  bubble.className = "bubble bot loading";
+  if (animate) bubble.classList.add("pop");
   bubble.innerHTML = '<span class="dot"></span><span class="dot"></span><span class="dot"></span>';
   return bubble;
 }
@@ -69,7 +74,7 @@ export function renderTurn(turn, assistantOverride, isLoading, animateAssistant)
   const botBubbleStack = document.createElement("div");
   botBubbleStack.className = "bubble-stack";
   if (isLoading) {
-    botBubbleStack.appendChild(createLoadingBubble());
+    botBubbleStack.appendChild(createLoadingBubble(false));
   } else {
     fillBotBubbles(botBubbleStack, assistantText, Boolean(animateAssistant));
   }
@@ -85,10 +90,23 @@ export function renderTurn(turn, assistantOverride, isLoading, animateAssistant)
 }
 
 export function renderMemory(memory, options = {}) {
+  const preserveScroll = options.preserveScroll === true;
+  const scrollState = preserveScroll && els.chatList
+    ? (() => {
+        const { scrollTop, scrollHeight, clientHeight } = els.chatList;
+        const distanceFromBottom = Math.max(0, scrollHeight - (scrollTop + clientHeight));
+        return {
+          distanceFromBottom,
+          nearBottom: distanceFromBottom <= AUTO_SCROLL_THRESHOLD_PX
+        };
+      })()
+    : null;
+
   els.chatList.innerHTML = "";
   const turns = Array.isArray(memory?.turns) ? memory.turns : [];
   const hasPending = memory?.status === "pending";
   const animateLastAssistant = Boolean(options.animateLastAssistant);
+  const scrollBehavior = options.scrollBehavior || "auto";
   const lastIdx = turns.length - 1;
   for (let i = 0; i < turns.length; i++) {
     const t = turns[i];
@@ -96,7 +114,15 @@ export function renderMemory(memory, options = {}) {
     const animateAssistant = animateLastAssistant && i === lastIdx && !isLoading;
     renderTurn(t, undefined, isLoading, animateAssistant);
   }
-  scrollToBottom();
+  if (preserveScroll && scrollState && !scrollState.nearBottom) {
+    const nextTop = Math.max(
+      0,
+      els.chatList.scrollHeight - els.chatList.clientHeight - scrollState.distanceFromBottom
+    );
+    els.chatList.scrollTop = nextTop;
+    return;
+  }
+  scrollToBottom({ behavior: scrollBehavior });
 }
 
 export function addTempUserMessage(text, tsOverride) {
@@ -127,7 +153,7 @@ export function addTempBotMessage(text, isLoading) {
   const bubbleStack = document.createElement("div");
   bubbleStack.className = "bubble-stack";
   if (isLoading) {
-    bubbleStack.appendChild(createLoadingBubble());
+    bubbleStack.appendChild(createLoadingBubble(true));
   } else {
     fillBotBubbles(bubbleStack, text, true);
   }
@@ -141,3 +167,6 @@ export function addTempBotMessage(text, isLoading) {
   scrollToBottom();
   return { row, bubbleStack, meta, ts };
 }
+
+
+

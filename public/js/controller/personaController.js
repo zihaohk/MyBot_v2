@@ -254,15 +254,15 @@ export async function setActivePersona(personaId, options = {}) {
     const mem = await loadPersonaMemory(state.activePersonaId, { deferRender: Boolean(fadePromise) });
     if (shouldFade && fadePromise) {
       await fadePromise;
-      renderActiveMemory(state.activePersonaId, mem);
+      renderActiveMemory(state.activePersonaId, mem, { preserveScroll: false });
       fadeInChatList();
     }
   } else if (shouldFade && fadePromise) {
     await fadePromise;
-    renderMemory(personaState.memory);
+    renderMemory(personaState.memory, { scrollBehavior: "auto", preserveScroll: false });
     fadeInChatList();
   } else {
-    renderMemory(personaState.memory);
+    renderMemory(personaState.memory, { scrollBehavior: "auto", preserveScroll: false });
   }
 
   renderPendingQueueForActive(state.activePersonaId);

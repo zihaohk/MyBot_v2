@@ -138,6 +138,70 @@ function getAssistantSegmentDelayMs() {
   return Math.round(n);
 }
 
+function shouldRenderMemoryAfterSegments(mem) {
+  if (!els.chatList) return true;
+  const turns = Array.isArray(mem?.turns) ? mem.turns : [];
+  const expectedRows = turns.length * 2;
+  return els.chatList.childElementCount !== expectedRows;
+}
+
+function syncSegmentedMeta(mem, pendingDisplay, botPlaceholder) {
+  const turns = Array.isArray(mem?.turns) ? mem.turns : [];
+  const lastTurn = turns[turns.length - 1];
+  const lastTs = typeof lastTurn?.ts === "string" ? lastTurn.ts : "";
+  if (!lastTs) return;
+  if (pendingDisplay?.meta) pendingDisplay.meta.textContent = lastTs;
+  if (botPlaceholder?.meta) botPlaceholder.meta.textContent = lastTs;
+}
+
+function finalizeSegmentedRender(personaId, mem, pendingDisplay, botPlaceholder) {
+  if (!mem || !isActivePersona(personaId)) return;
+  const personaState = getPersonaState(personaId);
+  personaState.animateNextAssistant = false;
+  if (shouldRenderMemoryAfterSegments(mem)) {
+    renderActiveMemory(personaId, mem);
+    return;
+  }
+  syncSegmentedMeta(mem, pendingDisplay, botPlaceholder);
+}
+
+function isSamePendingMemory(prevMem, nextMem) {
+  if (!prevMem || !nextMem) return false;
+  if (prevMem.status !== "pending" || nextMem.status !== "pending") return false;
+  const prevTurns = Array.isArray(prevMem.turns) ? prevMem.turns : [];
+  const nextTurns = Array.isArray(nextMem.turns) ? nextMem.turns : [];
+  if (prevTurns.length !== nextTurns.length) return false;
+  if (prevTurns.length === 0) return true;
+  const prevLast = prevTurns[prevTurns.length - 1] || {};
+  const nextLast = nextTurns[nextTurns.length - 1] || {};
+  return prevLast.user === nextLast.user &&
+    prevLast.assistant === nextLast.assistant &&
+    prevLast.ts === nextLast.ts;
+}
+
+function hasActiveLoadingBubble() {
+  if (!els.chatList) return false;
+  const lastRow = els.chatList.lastElementChild;
+  if (!lastRow) return false;
+  return Boolean(lastRow.querySelector(".bubble.loading"));
+}
+
+function getLoadingBubbleStack() {
+  if (!els.chatList) return null;
+  const botRows = els.chatList.querySelectorAll(".row.bot");
+  for (let i = botRows.length - 1; i >= 0; i -= 1) {
+    const row = botRows[i];
+    if (row.querySelector(".bubble.loading")) {
+      return row.querySelector(".bubble-stack");
+    }
+  }
+  return null;
+}
+
+function shouldSkipPendingRender(prevMem, nextMem) {
+  return isSamePendingMemory(prevMem, nextMem) && hasActiveLoadingBubble();
+}
+
 function buildBatchCountdownText(seconds) {
   return `将在${seconds}秒后发送，可继续输入以合并`;
 }
@@ -187,9 +251,10 @@ async function pollPendingOnce(personaId) {
     return;
   }
   const personaState = getPersonaState(personaId);
+  const prevMemory = personaState.memory;
   if (personaState.pendingPollInFlight) return;
   personaState.pendingPollInFlight = true;
-  const wasPending = personaState.memory?.status === "pending";
+  const wasPending = prevMemory?.status === "pending";
   try {
     const mem = await getMemory(personaId);
     if (!hasPersona(personaId)) return;
@@ -197,12 +262,41 @@ async function pollPendingOnce(personaId) {
     if (wasPending && mem?.status !== "pending") {
       personaState.animateNextAssistant = true;
     }
-    renderActiveMemory(personaId, mem);
+    const isPendingResolved = wasPending && mem?.status !== "pending";
+    let renderedViaSegments = false;
+    let deferReady = false;
+    if (isPendingResolved && isActivePersona(personaId)) {
+      const bubbleStack = getLoadingBubbleStack();
+      const turns = Array.isArray(mem?.turns) ? mem.turns : [];
+      const lastTurn = turns[turns.length - 1] || {};
+      const assistantText = typeof lastTurn.assistant === "string" ? lastTurn.assistant : "";
+      if (bubbleStack) {
+        renderedViaSegments = true;
+        deferReady = true;
+        renderAssistantSegments(bubbleStack, assistantText, personaId, () => {
+          const currentState = getPersonaState(personaId);
+          currentState.animateNextAssistant = false;
+          if (shouldRenderMemoryAfterSegments(mem)) {
+            renderActiveMemory(personaId, mem);
+          }
+          setStatusForPersona(personaId, "就绪");
+          setSendBusyForPersona(personaId, false);
+          if (isActivePersona(personaId)) {
+            els.input.focus();
+          }
+        });
+      }
+    }
+    if (!renderedViaSegments && !shouldSkipPendingRender(prevMemory, mem)) {
+      renderActiveMemory(personaId, mem);
+    }
     const hasPending = mem?.status === "pending";
     if (!hasPending) {
       stopPendingPoll(personaId);
-      setSendBusyForPersona(personaId, false);
-      setStatusForPersona(personaId, "就绪");
+      if (!deferReady) {
+        setSendBusyForPersona(personaId, false);
+        setStatusForPersona(personaId, "就绪");
+      }
     }
   } catch {
     // keep polling; if server is temporarily unavailable we can retry
@@ -278,12 +372,18 @@ export function clearPersonaTimers(personaId) {
   stopPendingPoll(personaId);
 }
 
-export function renderActiveMemory(personaId, memory) {
+export function renderActiveMemory(personaId, memory, options = {}) {
   if (!isActivePersona(personaId)) return;
   const personaState = getPersonaState(personaId);
+  const preserveScroll = options.preserveScroll !== false;
+  const scrollBehavior = options.scrollBehavior || "auto";
   personaState.pendingUserElements = null;
   clearAssistantSegmentTimers(personaId);
-  renderMemory(memory, { animateLastAssistant: personaState.animateNextAssistant });
+  renderMemory(memory, {
+    animateLastAssistant: personaState.animateNextAssistant,
+    preserveScroll,
+    scrollBehavior
+  });
   personaState.animateNextAssistant = false;
   renderPendingQueueForActive(personaId);
 }
@@ -301,7 +401,7 @@ export async function loadPersonaMemory(personaId, options = {}) {
   }
 
   if (!options.deferRender) {
-    renderActiveMemory(personaId, mem);
+    renderActiveMemory(personaId, mem, { preserveScroll: false });
     if (isActivePersona(personaId)) {
       updateSendButtonForActive();
     }
@@ -449,7 +549,7 @@ async function flushPendingMessages(personaId) {
         () => {
           animationDone = true;
           if (finalMemory && isActivePersona(personaId)) {
-            renderActiveMemory(personaId, finalMemory);
+            finalizeSegmentedRender(personaId, finalMemory, pendingDisplay, botPlaceholder);
           }
           setStatusForPersona(personaId, "就绪");
           setSendBusyForPersona(personaId, false);
@@ -465,7 +565,7 @@ async function flushPendingMessages(personaId) {
     if (releaseAfterSegments) {
       finalMemory = mem;
       if (animationDone && isActivePersona(personaId)) {
-        renderActiveMemory(personaId, mem);
+        finalizeSegmentedRender(personaId, mem, pendingDisplay, botPlaceholder);
       }
     } else {
       renderActiveMemory(personaId, mem);
